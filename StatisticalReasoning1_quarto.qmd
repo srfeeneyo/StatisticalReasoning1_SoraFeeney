@@ -1,0 +1,215 @@
+---
+title: "StatisticalReasoning1_quarto"
+format: pdf
+editor: visual
+---
+
+```{r}
+library(brms) # for statistics
+library(tidyverse)
+library(ggeffects) # for the prediction plot
+library(lterdatasampler) # for built-in datasets
+
+```
+
+# 1. Fiddler crabs
+
+```{r}
+head(pie_crab)
+```
+
+## 1.1 Plot data, pick the model
+
+```{r}
+pie_crab %>% 
+  ggplot(aes(x = latitude, y = size)) +
+  geom_point() +
+  # Make the y-axis include 0
+  ylim(0, NA)
+```
+
+### Q1.1 Interpret the graph
+
+Size looks like there is a small positive correlation with the latitude, but the values overlap a lot so we are not very confident.
+
+### Q1.2 Beautify this graph
+
+```{r}
+pie_crab %>% 
+  ggplot(aes(x = latitude, y = size)) +
+  geom_point() +
+  geom_jitter() +
+  # Make the y-axis include 0
+  ylim(0, NA) +
+  geom_smooth(method = lm) +
+  theme_classic()
+
+
+```
+
+## 1.2 Fit linear regression with `brms`
+
+```{r}
+# latitude model
+m.crab.lat <- 
+  brm(data = pie_crab, # Give the model the pie_crab data
+      # Choose a gaussian (normal) distribution
+      family = gaussian,
+      # Specify the model here. 
+      size ~ latitude,
+      # Here's where you specify parameters for executing the Markov chains
+      # We're using similar to the defaults, except we set cores to 4 so the analysis runs faster than the default of 1
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      # Setting the "seed" determines which random numbers will get sampled.
+      # In this case, it makes the randomness of the Markov chain runs reproducible 
+      # (so that both of us get the exact same results when running the model)
+      seed = 4,
+      # Save the fitted model object as output - helpful for reloading in the output later
+      file = "output/m.crab.lat")
+```
+
+### Q1.3 What does the "iter" argument do?
+
+```{r}
+?brm
+```
+
+iter is the number of total iterations per Morkov chain.
+
+## 1.3 Assess model
+
+```{r}
+summary(m.crab.lat)
+plot(m.crab.lat) # show posteriors and chains
+```
+
+## 1.4 Interpret model
+
+```{r}
+summary(m.crab.lat)
+```
+
+### Bonus
+
+```{r}
+as_draws_df(m.crab.lat)  %>%  # extract the posterior samples from the model estimate
+  select(b_latitude)  %>%  # pull out the latitude samples from all 4 chains. we'll get a warning that we can ignore.
+  summarize(p_slope_lessthanorequalto_zero = sum(b_latitude <= 0)/length(b_latitude))
+
+```
+
+## 1.5 Plot model on the data
+
+```{r}
+# compatibility interval. the shows uncertainty in the average response.
+confm.crab.lat <- predict_response(m.crab.lat)
+plot(confm.crab.lat, show_data = TRUE)
+
+
+# prediction interval. this shows uncertainty in the data around the average response.
+confm.crab.lat <- predict_response(m.crab.lat, interval = 'prediction')
+plot(confm.crab.lat, show_data = TRUE)
+```
+
+## 1.6 Repeat with a new variable: water temp sd
+
+### Q1.4 Make a hypothesis
+
+We think that larger crabs should be able to widthstand more temperature variability, because of their larger size and temperature sensitivity
+
+### Q1.5 Graph the data
+
+```{r}
+pie_crab %>% 
+  ggplot(aes(x = water_temp_sd, y = size)) +
+  geom_point() +
+  geom_jitter() +
+  # Make the y-axis include 0
+  ylim(0, NA) +
+  geom_smooth(method = lm) +
+  theme_classic()
+```
+
+### Q1.6 Interpret the graph
+
+Size does not look like it changes with the variation in water temperature because the slope looks to be flat.
+
+### Q1.7 Set up and run this new model
+
+We'll set up our model to look like:
+
+$size = intercept + slope*watertempsd$
+
+```{r}
+m.crab.watersd <- 
+  brm(data = pie_crab, # Give the model the pie_crab data
+      # Choose a gaussian (normal) distribution
+      family = gaussian,
+      # Specify the model here. 
+      size ~ water_temp_sd,
+      # Here's where you specify parameters for executing the Markov chains
+      # We're using similar to the defaults, except we set cores to 4 so the analysis runs faster than the default of 1
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      # Setting the "seed" determines which random numbers will get sampled.
+      # In this case, it makes the randomness of the Markov chain runs reproducible 
+      # (so that both of us get the exact same results when running the model)
+      seed = 4,
+      # Save the fitted model object as output - helpful for reloading in the output later
+      file = "output/m.crab.water")
+
+# show posteriors and chains
+plot(m.crab.watersd) 
+
+# show summary, including rhat
+summary(m.crab.watersd)
+
+confm.crab.watersd <- predict_response(m.crab.watersd)
+plot(confm.crab.watersd, show_data = TRUE)
+
+
+# prediction interval. this shows uncertainty in the data around the average response.
+confm.crab.watersd <- predict_response(m.crab.watersd, interval = 'prediction')
+plot(confm.crab.watersd, show_data = TRUE)
+```
+
+### Q1.8 Assess the model
+
+```{r eval = FALSE}
+# show posteriors and chains
+plot(m.crab.watersd) 
+
+# show summary, including rhat
+summary(m.crab.watersd)
+
+```
+
+### Q1.9 Interpret the model
+
+1.  What is the effect of your predictor? This information is in the `estimate` column to the right of your predictor `water_temp_sd`. Remember to describe the effect using the units to make it biologically meaningful.
+
+The effect of water temperature sd is 0.10cm/water_temp_sd, a 0.1 cm increase in crab size for each sd of water temperature variability.
+
+1.  Is the effect reasonably different from zero? In other words, does the confidence interval intersect with zero?
+
+The confidence interval, between -0.21 and 0.41, intersects with zero, meaning that there is little effect of the water temperature variation on crab size.
+
+```{r eval = FALSE}
+# Show model output
+summary(m.crab.watersd)
+```
+
+# 2. Back to Pikas!
+
+```{r}
+head(nwt_pikas)
+nwt_pikas_doy <- nwt_pikas %>% 
+  # Add a new column called day_of_year
+  # yday extracts the day of year from the date column
+  mutate(day_of_year = yday(date)) %>% 
+  # relocate the day_of_year column after the date column
+  relocate(day_of_year, .after = date)
+
+head(nwt_pikas_doy)
+```
+
+The stress levels of pikas will have a positive correlation with elevation because the environment is harsher, and therefore likely more stressful.
